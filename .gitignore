@@ -161,3 +161,39 @@ cython_debug/
 
 .ruff_cache/
 *.zip
+
+# ==============================================================================
+# CS336 Assignment & Machine Learning Training (Colab)
+# ==============================================================================
+
+# Datasets and large corpora (download or mount via Google Drive on Colab)
+data/raw/
+data/tokenized/
+*.npy
+*.npz
+*.bin
+*.tar.gz
+*.tar
+*.gz
+
+# Model checkpoints & weights (save to Google Drive or wandb, not Git)
+checkpoints/
+saved_models/
+weights/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Experiment tracking & logging
+wandb/
+runs/
+tensorboard/
+logs/
+*.log
+
+# Editor & local development settings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
