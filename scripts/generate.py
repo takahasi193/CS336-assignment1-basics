@@ -1,5 +1,9 @@
 import torch
 import torch.nn.functional as F
+import argparse
+import cs336_basics.model as Model
+from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.config import Config
 def top_p(logits:torch.Tensor,top_p:float,temperature:float):
     if temperature>0.0:
         # shape (batch_size,vocab_size)
@@ -17,6 +21,94 @@ def top_p(logits:torch.Tensor,top_p:float,temperature:float):
     result_indices=torch.multinomial(top_p_prob,num_samples=1)
     indices=torch.gather(logits_indices,dim=-1,index=result_indices)
     return indices
+
+def parse_args(config):
+    parser=argparse.ArgumentParser(
+        description="生成文本"
+    )
+
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="There is a"
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=256
+    )
+
+    parser.add_argument(
+            "--temperature",
+            type=float,
+            default=0.8
+        )
+
+    parser.add_argument(
+            "--top_p",
+            type=float,
+            default=0.9
+        )
+
+    parser.add_argument(
+                    "--vocab_load_path",
+                    type=str,
+                    default="data/tokenizer_config_data/vocab.pkl"
+                )
+    
+    parser.add_argument(
+            "--merges_load_path",
+            type=str,
+            default="data/tokenizer_config_data/merges.pkl"
+        )
+    
+    parser.add_argument(
+            "--special_tokens_load_path",
+            type=str,
+            default="data/tokenizer_config_data/special_tokens.pkl"
+        )
+
+    parser.add_argument(
+        "--checkpoint_load_path",
+        type=str,
+        default=f"output/checkpoint/checkpoint_iter_{config.max_iters}.pt"
+    )
+
+    
+
+    return parser.parse_args()
+
+@torch.no_grad
+def generate():
+    config=Config()
+    args=parse_args(config)
+    tokenizer=Tokenizer.from_files(args.vocab_load_path,args.merges_load_path,args.special_tokens_load_path)
+    model=Model.Transformer_LM(config).to(config.device)
+    checkpoint=torch.load(args.checkpoint_load_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    ids=torch.tensor(tokenizer.encode(args.prompt),device=config.device).unsqueeze(0)
+    for _ in range(args.max_new_tokens):
+        ids_cond=ids[...,-config.max_seq_len:]
+        logits=model(ids_cond)
+        logits=logits[...,-1,:]
+        new_token=top_p(logits,args.top_p,args.temperature)
+        if new_token.item()==tokenizer.eos_token:
+            break
+        ids=torch.cat([ids,new_token],dim=-1)
+
+    text=tokenizer.decode(ids[0].tolist())
+    print(text)
+
+if __name__=="__main__":
+    generate()
+
+        
+    
+
+    
+
+
 
 
 

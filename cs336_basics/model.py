@@ -38,6 +38,16 @@ class Swiglu(nn.Module):
         assert self.d_model==in_features.size(-1)
         return self.w2(silu(self.w1(in_features))*self.w3(in_features))
 
+class SiluFFN(nn.Module):
+    def __init__(self,d_model):
+        super().__init__()
+        self.w1=Linear(d_model,d_model*4)
+        self.w2=Linear(d_model*4,d_model)
+    def forward(self,in_features):
+        return self.w2(silu(self.w1(in_features)))
+        
+    
+
 
 def silu(in_features):
     sigmoid=1.0/(1+torch.exp(-1.0*in_features))
@@ -64,17 +74,20 @@ def softmax(in_features,dim=-1):
 
 
 class CausalAttention(nn.Module):
-    def __init__(self,config:Config,use_rope=False):
+    def __init__(self,config:Config,use_rope:bool|None=None):
         super().__init__()
         assert config.d_model%config.num_heads==0
+        if use_rope is not None:
+            self.use_rope=use_rope
+        else:
+            self.use_rope=config.use_rope
         self.config=config
         self.q_proj=Linear(config.d_model,config.d_model)
         self.k_proj=Linear(config.d_model,config.d_model)
         self.v_proj=Linear(config.d_model,config.d_model)
         self.output_proj=Linear(config.d_model,config.d_model)
         self.d_k=config.d_model//config.num_heads
-        self.use_rope=use_rope
-        if config.max_seq_len is not None and config.theta is not None and use_rope:
+        if config.max_seq_len is not None and config.theta is not None and self.use_rope:
             self.rope=RotaryPositionalEmbedding(config.theta,self.d_k,config.max_seq_len)
 
     def forward(self,in_features,token_positions=None):
@@ -154,29 +167,42 @@ class RMSNorm(nn.Module):
 
     def forward(self,in_features):
         assert self.d_model==in_features.size(-1)
+        in_type=in_features.dtype
+        in_features=in_features.to(torch.float32)
         # shape (...,d_model)
         rms=torch.rsqrt(torch.mean(in_features*in_features,dim=-1,keepdim=True)+self.eps)
         in_features=in_features*rms
-        return in_features*self.weight
+        return (in_features*self.weight).to(in_type)
 
 class TransformerBlock(nn.Module):
     def __init__(self,config:Config):
         super().__init__()
         self.config=config
-        self.ffn=Swiglu(config.d_model,config.d_ff)
-        self.attn=CausalAttention(config,use_rope=True)
+        if config.ffn_type=="swiglu":
+            self.ffn=Swiglu(config.d_model,config.d_ff)
+        else:
+            self.ffn=SiluFFN(config.d_model)
+        self.attn=CausalAttention(config,config.use_rope)
         self.ln1=RMSNorm(config.d_model,config.eps)
         self.ln2=RMSNorm(config.d_model,config.eps)
 
     def forward(self,in_features,token_positions=None):
-        y1=in_features+self.attn(self.ln1(in_features),token_positions)
-        y2=y1+self.ffn(self.ln2(y1))
+        if self.config.norm_type=="pre_norm":
+            y1=in_features+self.attn(self.ln1(in_features),token_positions)
+            y2=y1+self.ffn(self.ln2(y1))
+        elif self.config.norm_type=="post_norm":
+            y1=self.ln1(in_features+self.attn(in_features,token_positions))
+            y2=self.ln2(y1+self.ffn(y1))
+        else:
+            y1=in_features+self.attn(in_features,token_positions)
+            y2=y1+self.ffn(y1)
         return y2
 
     
 class Transformer_LM(nn.Module):
     def __init__(self,config:Config):
         super().__init__()
+        self.config=config
         self.layers=nn.ModuleList([TransformerBlock(config) for _ in range(config.num_layers)])
         self.token_embeddings=Embedding(config.vocab_size,config.d_model)
         self.ln_final=RMSNorm(config.d_model,config.eps)
@@ -186,7 +212,8 @@ class Transformer_LM(nn.Module):
         ids=self.token_embeddings(in_indices)
         for layer in self.layers:
             ids=layer(ids,token_positions)
-        
+        if self.config.norm_type=="none":
+            return self.lm_head(ids)
         return self.lm_head(self.ln_final(ids))
 
 

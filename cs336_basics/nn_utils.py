@@ -13,8 +13,7 @@ def cross_entropy(inputs: Float[Tensor," batch_size vocab_size"],targets: Int[Te
     # shape (batch_size,1)
     sum_exp_inputs=torch.log(torch.sum(exp_inputs,dim=-1,keepdim=True))
     loss=-logits+sum_exp_inputs
-    loss=loss.squeeze().mean(dim=0)
-    return loss
+    return loss.mean()
 
 
 def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float):
@@ -28,7 +27,7 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
        for parameter in parameters:
            if parameter.grad is not None:
             parameter.grad=parameter.grad.mul(scaled)
-            
+    return combined_gradient
 
             
     

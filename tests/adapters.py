@@ -165,7 +165,7 @@ def run_multihead_self_attention(
     """
 
     config=Config(d_model=d_model,num_heads=num_heads)
-    attn=model.CausalAttention(config)
+    attn=model.CausalAttention(config,use_rope=False)
     state_dict={
             'q_proj.weight':q_proj_weight,
             'k_proj.weight':k_proj_weight,

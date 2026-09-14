@@ -1,9 +1,8 @@
 import os
 import regex
-from typing import Iterable, Iterator
 from collections import Counter
-from collections import deque
 import pickle
+from typing import Iterator
 
 class Tokenizer:
     def __init__(self,vocab,merges,special_tokens=None):
@@ -18,6 +17,7 @@ class Tokenizer:
         self.vocab_reverse={byte_token:token_id for token_id,byte_token in self.vocab.items()}
         self.pair2id={pair:i for i,pair in enumerate(merges)}
         self.special_tokens=special_tokens
+        self.eos_token=self.vocab_reverse.get("<|endoftext|>".encode("utf-8"),None)
 
     
     def encode(self,text:str)->list[int]:
@@ -169,13 +169,16 @@ class Tokenizer:
         return vocab,merges
 
     @classmethod
-    def from_files(cls, vocab_filepath, merges_filepath,special_tokens_filepath):
+    def from_files(cls, vocab_filepath, merges_filepath,special_tokens_filepath=None):
         with open(vocab_filepath,'rb') as f:
             vocab=pickle.load(f)
         with open(merges_filepath,'rb') as f:
             merges=pickle.load(f)
-        with open(special_tokens_filepath,'rb') as f:
-            special_tokens=pickle.load(f)
+        if special_tokens_filepath is not None:
+            with open(special_tokens_filepath,'rb') as f:
+                special_tokens=pickle.load(f)
+        else:
+            special_tokens=None
         return cls(vocab,merges,special_tokens)
 
     @classmethod

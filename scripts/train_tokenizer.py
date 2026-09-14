@@ -1,5 +1,6 @@
 from cs336_basics.tokenizer import Tokenizer
 import argparse
+import time
 
 def parse_args():
     parser=argparse.ArgumentParser(
@@ -56,8 +57,11 @@ if __name__=="__main__":
     print(f"special tokens: {args.special_tokens}")
     print(f"vocab saved in: {args.vocab_output_path}")
     print(f"merges saved in: {args.merges_output_path}")
+    start_time=time.time()
     vocab,merges=Tokenizer.train(args.input_path,args.vocab_size,args.special_tokens)
+    print(f"训练用时: {time.time()-start_time}s")
     Tokenizer.to_files(args.vocab_output_path,args.merges_output_path,args.special_tokens_output_path,vocab,merges,args.special_tokens)
+    
 
 
 
