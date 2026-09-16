@@ -47,7 +47,7 @@ def parse_args(config):
     parser.add_argument(
             "--top_p",
             type=float,
-            default=0.9
+            default=config.top_p
         )
 
     parser.add_argument(

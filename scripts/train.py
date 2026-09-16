@@ -14,7 +14,7 @@ from cs336_basics.log_local import log_save_to_disk
 
 
 
-def parse_args():
+def parse_args(config:Config):
     parser=argparse.ArgumentParser(
         description="训练模型"
     )
@@ -34,25 +34,25 @@ def parse_args():
     parser.add_argument(
             "--lr",
             type=float,
-            default=None
+            default=config.lr
         )
 
     parser.add_argument(
             "--batch_size",
             type=int,
-            default=None
+            default=config.batch_size
         )
 
     parser.add_argument(
             "--max_iters",
             type=int,
-            default=None
+            default=config.max_iters
         )
 
     parser.add_argument(
             "--warmup_iters",
             type=int,
-            default=None
+            default=config.warmup_iters
         )
 
     parser.add_argument(
@@ -64,25 +64,25 @@ def parse_args():
     parser.add_argument(
         "--save_interval",
         type=int,
-        default=None
+        default=config.save_interval
     )
 
     parser.add_argument(
         "--eval_interval",
         type=int,
-        default=None
+        default=config.eval_interval
     )
 
     parser.add_argument(
         "--eval_iters",
         type=int,
-        default=None
+        default=config.eval_iters
     )
 
     parser.add_argument(
         "--log_interval",
         type=int,
-        default=None
+        default=config.log_interval
     )
 
     parser.add_argument(
@@ -94,32 +94,32 @@ def parse_args():
     parser.add_argument(
             "--norm_type",
             type=str,
-            default=None
+            default=config.norm_type
         )
 
 
     parser.add_argument(
             "--use_rope",
             type=lambda x:str(x).lower() in ('true',),
-            default=None
+            default=config.use_rope
         )
 
     parser.add_argument(
             "--ffn_type",
             type=str,
-            default=None
+            default=config.ffn_type
         )
 
     parser.add_argument(
             "--use_wandb",
             type=lambda x:str(x).lower() in ('true',),
-            default=None
+            default=config.use_wandb
         )
 
     parser.add_argument(
                 "--use_local_log",
                 type=lambda x:str(x).lower() in ('true',),
-                default=None
+                default=config.use_local_log
             )
 
     parser.add_argument(
@@ -144,10 +144,10 @@ def estimate_loss(model:torch.nn.Module,eval_data:npt.NDArray,eval_iters:int,con
 
 def train_model():
     config=Config()
-    args=parse_args()
+    args=parse_args(config)
     arg_dict=vars(args)
     for arg,value in arg_dict.items():
-        if hasattr(config,arg) and value is not None:
+        if hasattr(config,arg):
             setattr(config,arg,value)
         
     setattr(config,"cosine_cycle_iters",config.max_iters)
@@ -173,7 +173,7 @@ def train_model():
         import wandb
         wandb.init(
             project="cs336-assignment1",        
-            name=f"baseline_lr_{config.lr}",    
+            name=f"baseline_lr_{config.lr}_{config.batch_size}",    
             config=vars(config)                 
         )
     
@@ -181,8 +181,8 @@ def train_model():
     start_time=time.time()
     for iter in range(start_iter,config.max_iters):
         if iter%config.save_interval==0:
-            save_checkpoint(model,opt,iter,f"{save_path}_{iter}.pt")
-            print(f"检查点已成功保存到: {save_path}_{iter}.pt")
+            save_checkpoint(model,opt,iter,f"{save_path}_{iter}_{config.batch_size}.pt")
+            print(f"检查点已成功保存到: {save_path}_{iter}_{config.batch_size}.pt")
 
         if iter%config.eval_interval==0:
             eval_loss=estimate_loss(model,valid_tokenized_data,config.eval_iters,config)
@@ -202,7 +202,7 @@ def train_model():
                     "Eval loss":eval_loss.item(),
                     "Eval ppl":torch.exp(eval_loss).item(),
                 }
-                log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
+                log_save_to_disk(os.path.join(args.log_output_dir,f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_{config.batch_size}_log.jsonl"),save_log)
             print(f"第{iter}轮eval_loss: {eval_loss}")
             print(f"第{iter}轮PPL: {torch.exp(eval_loss).item(): .4f}")
 
@@ -233,7 +233,7 @@ def train_model():
                     "token seen":token_seen
                 }
 
-                log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
+                log_save_to_disk(os.path.join(args.log_output_dir,f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_{config.batch_size}_log.jsonl"),save_log)
             if config.use_wandb:
                 wandb.log({
                 "train/loss": loss.item(),
@@ -252,8 +252,8 @@ def train_model():
 
     final_val_loss = estimate_loss(model, valid_tokenized_data, config.eval_iters, config)
     print(f"最终验证集 Loss: {final_val_loss.item():.4f}")
-    save_checkpoint(model, opt, config.max_iters, f"{save_path}_final.pt")
-    print(f"最终检查点已保存至: {save_path}_final.pt")
+    save_checkpoint(model, opt, config.max_iters, f"{save_path}_{config.lr}_{config.batch_size}.pt")
+    print(f"最终检查点已保存至: {save_path}_{config.lr}_{config.batch_size}.pt")
     if config.use_wandb:
         wandb.log(
         {
@@ -265,9 +265,9 @@ def train_model():
     if config.use_local_log:
         save_log={
             "Iter":config.max_iters,
-            "final eval loss":final_val_loss,
+            "final eval loss":final_val_loss.item(),
         }
-        log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
+        log_save_to_disk(os.path.join(args.log_output_dir,f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_{config.batch_size}_log.jsonl"),save_log)
 
 if __name__=="__main__":
     train_model()

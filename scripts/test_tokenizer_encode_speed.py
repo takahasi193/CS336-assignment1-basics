@@ -1,6 +1,7 @@
 from cs336_basics.tokenizer import Tokenizer
 import argparse
 import time
+import os
 
 def parse_args():
     parser=argparse.ArgumentParser(
@@ -35,13 +36,14 @@ def parse_args():
 def main():
     args=parse_args()
     tokenizer=Tokenizer.from_files(args.vocab_load_path,args.merges_load_path,args.special_tokens_load_path)
+    file_size=os.path.getsize(args.test_raw_data_load_path)
     with open(args.test_raw_data_load_path,"r",encoding="utf-8") as f:
         test_text=f.read()
-    print("开始测试")
+    print("test start")
     start_time=time.time()
     tokenizer.encode(test_text)
     comsume_time=time.time()-start_time
-    print(f"消耗时间: {comsume_time}")
+    print(f"tokenizer encode speed: {file_size/comsume_time:4f} byte/s" )
 
 if __name__=="__main__":
     main()

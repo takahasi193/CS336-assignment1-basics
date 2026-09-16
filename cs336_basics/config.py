@@ -45,6 +45,7 @@ class Config:
 
     # generate
     temperature:float=0.8
+    top_p:float=0.9
 
     # 消融实验
     norm_type:str="pre_norm"
