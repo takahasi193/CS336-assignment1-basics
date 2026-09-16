@@ -151,6 +151,7 @@ def train_model():
             setattr(config,arg,value)
         
     setattr(config,"cosine_cycle_iters",config.max_iters)
+    setattr(config,"warmup_iters",config.max_iters//20)
     setattr(config, "max_learning_rate", config.lr)
     setattr(config, "min_learning_rate", config.lr / 10.0)
 

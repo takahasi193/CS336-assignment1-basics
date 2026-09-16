@@ -40,7 +40,7 @@ class Config:
     # lr_schedule
     max_learning_rate:float=lr
     min_learning_rate:float=lr/10.0
-    warmup_iters:int=500
+    warmup_iters:int=max_iters//20
     cosine_cycle_iters:int=max_iters
 
     # generate
