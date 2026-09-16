@@ -10,6 +10,7 @@ from cs336_basics.data import get_batch
 from cs336_basics.nn_utils import cross_entropy,gradient_clipping
 from cs336_basics.optimizer import AdamW,lr_cosine_schedule
 from cs336_basics.serialization import save_checkpoint,load_checkpoint
+from cs336_basics.log_local import log_save_to_disk
 
 
 
@@ -108,6 +109,24 @@ def parse_args():
             type=str,
             default=None
         )
+
+    parser.add_argument(
+            "--use_wandb",
+            type=lambda x:str(x).lower() in ('true',),
+            default=None
+        )
+
+    parser.add_argument(
+                "--use_local_log",
+                type=lambda x:str(x).lower() in ('true',),
+                default=None
+            )
+
+    parser.add_argument(
+                    "--log_output_dir",
+                    type=str,
+                    default="output/log/"
+                )
     
     return parser.parse_args()
 
@@ -143,20 +162,20 @@ def train_model():
     model=torch.compile(model)
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
+    os.makedirs(args.log_output_dir, exist_ok=True) 
     save_path=os.path.join(args.checkpoint_dir,r"checkpoint_iter")
 
     start_iter=0
     if args.resume_checkpoint_path is not None:
        start_iter=load_checkpoint(args.resume_checkpoint_path,model,opt)
 
-    import wandb
-
-    # 初始化项目与本次实验名称
-    wandb.init(
-        project="cs336-assignment1",        
-        name=f"baseline_lr_{config.lr}",    
-        config=vars(config)                 
-    )
+    if config.use_wandb:
+        import wandb
+        wandb.init(
+            project="cs336-assignment1",        
+            name=f"baseline_lr_{config.lr}",    
+            config=vars(config)                 
+        )
     
     model.train()
     start_time=time.time()
@@ -167,11 +186,24 @@ def train_model():
 
         if iter%config.eval_interval==0:
             eval_loss=estimate_loss(model,valid_tokenized_data,config.eval_iters,config)
-            wandb.log({
-                "eval/loss": eval_loss.item(),
-                "eval/ppl": torch.exp(eval_loss).item()
-            }, step=iter)
-            print(f"第{iter}轮loss: {eval_loss}")
+            current_time=time.time()
+            elapsed=current_time-start_time
+            if config.use_wandb:
+                wandb.log({
+                    "eval/loss": eval_loss.item(),
+                    "eval/ppl": torch.exp(eval_loss).item(),
+                    "time/elapsed_sec": elapsed
+                }, step=iter)
+
+            if config.use_local_log:
+                save_log={
+                    "Iter":iter,
+                    "Elapsed":elapsed,
+                    "Eval loss":eval_loss.item(),
+                    "Eval ppl":torch.exp(eval_loss).item(),
+                }
+                log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
+            print(f"第{iter}轮eval_loss: {eval_loss}")
             print(f"第{iter}轮PPL: {torch.exp(eval_loss).item(): .4f}")
 
 
@@ -190,24 +222,52 @@ def train_model():
         if iter%config.log_interval==0:
             current_time=time.time()
             elapsed=current_time-start_time
-            wandb.log({
-            "train/loss": loss.item(),
-            "train/lr": lr,
-            "train/grad_norm": global_grad.item(),
-            "time/elapsed_sec": elapsed
-            }, step=iter)
+            token_seen=(iter+1)*config.batch_size*config.max_seq_len
+            if config.use_local_log:
+                save_log={
+                    "Iter":iter,
+                    "Elapsed":elapsed,
+                    "Train loss": loss.item(),
+                    "Lr":lr,
+                    "Grad norm":global_grad.item(),
+                    "token seen":token_seen
+                }
+
+                log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
+            if config.use_wandb:
+                wandb.log({
+                "train/loss": loss.item(),
+                "train/lr": lr,
+                "train/grad_norm": global_grad.item(),
+                "time/elapsed_sec": elapsed,
+                "token_seen": token_seen
+                }, step=iter)
 
             print(f"Iter: {iter}")
             print(f"Elapsed: {elapsed: .2f}s")
             print(f"Train loss: {loss.item(): .4f}")
-            print(f"Ir: {lr: .6e}")
-            print(f"Grad_norm: {global_grad.item(): .4f}")
+            print(f"Lr: {lr: .6e}")
+            print(f"Grad norm: {global_grad.item(): .4f}")
+            print(f"token seen: {token_seen}")
 
     final_val_loss = estimate_loss(model, valid_tokenized_data, config.eval_iters, config)
     print(f"最终验证集 Loss: {final_val_loss.item():.4f}")
     save_checkpoint(model, opt, config.max_iters, f"{save_path}_final.pt")
     print(f"最终检查点已保存至: {save_path}_final.pt")
-    wandb.finish()
+    if config.use_wandb:
+        wandb.log(
+        {
+            "eval/loss": final_val_loss.item(),
+        },step=config.max_iters
+        )
+        wandb.finish()
+
+    if config.use_local_log:
+        save_log={
+            "Iter":config.max_iters,
+            "final eval loss":final_val_loss,
+        }
+        log_save_to_disk(args.log_output_dir+f"_{config.use_rope}_{config.norm_type}_{config.ffn_type}_{config.lr}_log.jsonl",save_log)
 
 if __name__=="__main__":
     train_model()

@@ -50,6 +50,10 @@ class Config:
     norm_type:str="pre_norm"
     use_rope:bool=True
     ffn_type:str="swiglu"
+
+    # 日志
+    use_wandb:bool=True
+    use_local_log:bool=True
     
 
     
