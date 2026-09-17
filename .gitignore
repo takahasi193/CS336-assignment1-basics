@@ -197,3 +197,6 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Experiment reports and local analysis
+*experiment_report.md

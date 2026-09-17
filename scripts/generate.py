@@ -75,7 +75,21 @@ def parse_args(config):
         default=f"output/checkpoint/norm_type-{config.norm_type}_use_rope-{config.use_rope}_ffn_type-{config.ffn_type}_lr-{config.lr}_batch_size-{config.batch_size}_iter-{config.max_iters}.pt"
     )
 
-    
+    parser.add_argument(
+        "--norm_type",
+        type=str,
+        default=None
+    )
+    parser.add_argument(
+        "--use_rope",
+        type=lambda x: str(x).lower() in ('true',),
+        default=None
+    )
+    parser.add_argument(
+        "--ffn_type",
+        type=str,
+        default=None
+    )
 
     return parser.parse_args()
 
@@ -83,12 +97,25 @@ def parse_args(config):
 def generate():
     config=Config()
     args=parse_args(config)
-    pattern = r"(norm_type|use_rope|ffn_type)-([^_]+)"
-    result = dict(regex.findall(pattern, args.checkpoint_load_path))
-    for key,value in result.items():
-        if key=="use_rope":
-            value=str(value) in ('True',)
-        setattr(config,key,value)
+
+    norm_match = regex.search(r"norm_type-(pre_norm|post_norm|none)", args.checkpoint_load_path)
+    if norm_match:
+        config.norm_type = norm_match.group(1)
+    if args.norm_type is not None:
+        config.norm_type = args.norm_type
+
+    rope_match = regex.search(r"use_rope-(True|False)", args.checkpoint_load_path)
+    if rope_match:
+        config.use_rope = (rope_match.group(1) == "True")
+    if args.use_rope is not None:
+        config.use_rope = args.use_rope
+
+    ffn_match = regex.search(r"ffn_type-(swiglu|silu)", args.checkpoint_load_path)
+    if ffn_match:
+        config.ffn_type = ffn_match.group(1)
+    if args.ffn_type is not None:
+        config.ffn_type = args.ffn_type
+
     if args.prompt=="":
         args.prompt=r"/"
     tokenizer=Tokenizer.from_files(args.vocab_load_path,args.merges_load_path,args.special_tokens_load_path)
