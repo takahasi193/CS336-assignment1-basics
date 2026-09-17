@@ -164,7 +164,7 @@ def train_model():
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     os.makedirs(args.log_output_dir, exist_ok=True) 
-    exp_path=f"norm_type-{config.norm_type}_use_rope-{config.use_rope}_ffn_type-{config.ffn_type}_lr-{config.lr}_batch_size-{config.batch_size}"
+    exp_path=f"norm_type-{config.norm_type}_use_rope-{config.use_rope}_ffn_type-{config.ffn_type}_max_iters-{config.max_iters}_lr-{config.lr}_batch_size-{config.batch_size}"
     base_save_path=os.path.join(args.checkpoint_dir,exp_path)
     start_iter=0
     if args.resume_checkpoint_path is not None:
