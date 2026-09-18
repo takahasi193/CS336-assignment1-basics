@@ -294,5 +294,5 @@ def train_model():
         }
         log_save_to_disk(os.path.join(args.log_output_dir,exp_path+".jsonl"),save_log)
 
-    if __name__=="__main__":
-        train_model()
+if __name__=="__main__":
+    train_model()
