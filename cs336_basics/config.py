@@ -24,9 +24,14 @@ class Config:
     device:str='cuda' if torch.cuda.is_available() else 'cpu'
 
     # AdamW
-    lr:float=3e-4
+    lr:float=3e-3
     betas:tuple[float,float]=(0.9,0.95)
     weight_decay:float=0.01
+
+    # Muon
+    beta:float=0.95
+    lr_muon:float=5e-3
+
 
     # train
     max_iters:int=10000
@@ -42,6 +47,10 @@ class Config:
     min_learning_rate:float=lr/10.0
     warmup_iters:int=max_iters//20
     cosine_cycle_iters:int=max_iters
+
+    max_learning_rate_muon:float=lr_muon
+    min_learning_rate_muon:float=lr_muon/10.0
+
 
     # generate
     temperature:float=0.8

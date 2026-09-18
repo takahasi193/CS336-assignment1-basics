@@ -81,7 +81,7 @@ class Muon(torch.optim.Optimizer):
                  a:float=3.4445,
                  b:float=-4.7750,
                  c:float=2.0315,
-                 eps:float=1e-7,
+                 eps:float=1e-8,
                  nesterov:bool|None=True):
         if lr<0.0:
             raise ValueError("learning rate can't to be a negative number")
@@ -107,6 +107,7 @@ class Muon(torch.optim.Optimizer):
         super().__init__(params,default)
 
     @classmethod
+    @torch.compile
     def Newton_Schulz(cls,u:torch.Tensor,K:int,a:float,b:float,c:float,eps:float):
         assert u.ndim==2
         x=u/(u.norm()+eps)

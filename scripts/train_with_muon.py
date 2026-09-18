@@ -8,11 +8,9 @@ import numpy.typing as npt
 import cs336_basics.model as Model
 from cs336_basics.data import get_batch
 from cs336_basics.nn_utils import cross_entropy,gradient_clipping
-from cs336_basics.optimizer import AdamW,lr_cosine_schedule
+from cs336_basics.optimizer import AdamW,lr_cosine_schedule,Muon
 from cs336_basics.serialization import save_checkpoint,load_checkpoint
 from cs336_basics.log_local import log_save_to_disk
-
-
 
 def parse_args(config:Config):
     parser=argparse.ArgumentParser(
@@ -130,6 +128,7 @@ def parse_args(config:Config):
     
     return parser.parse_args()
 
+
 @torch.no_grad()
 def estimate_loss(model:torch.nn.Module,eval_data:npt.NDArray,eval_iters:int,config:Config):
     model.eval()
@@ -141,6 +140,7 @@ def estimate_loss(model:torch.nn.Module,eval_data:npt.NDArray,eval_iters:int,con
     loss/=eval_iters
     model.train()
     return loss
+
 
 def train_model():
     config=Config()
@@ -154,21 +154,36 @@ def train_model():
     setattr(config,"warmup_iters",config.max_iters//20)
     setattr(config, "max_learning_rate", config.lr)
     setattr(config, "min_learning_rate", config.lr / 10.0)
+    setattr(config,"max_learning_rate_muon",config.lr_muon)
+    setattr(config,"min_learning_rate_muon",config.lr_muon/10.0)
 
     train_tokenized_data=np.load(args.train_data_path,mmap_mode='r')
     valid_tokenized_data=np.load(args.valid_data_path,mmap_mode='r')
 
     model=Model.Transformer_LM(config).to(config.device)
-    opt=AdamW(params=model.parameters(),lr=config.lr,betas=config.betas,weight_decay=config.weight_decay)
-    model=torch.compile(model)
+    adam_params=[]
+    muon_params=[]
+    for name,param in model.named_parameters():
+        if param.ndim!=2:
+            adam_params.append(param)
+            continue
+        if any(keyword in name for keyword in ["ln","embedding","lm_head"]):
+            adam_params.append(param)
+        else:
+            muon_params.append(param)
 
+    opt_adam=AdamW(params=adam_params,lr=config.lr,betas=config.betas,weight_decay=config.weight_decay)
+    opt_muon=Muon(params=muon_params,lr=config.lr_muon,beta=config.beta,weight_decay=config.weight_decay)
+
+    model=torch.compile(model)
+    
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     os.makedirs(args.log_output_dir, exist_ok=True) 
-    exp_path=f"norm_type-{config.norm_type}_use_rope-{config.use_rope}_ffn_type-{config.ffn_type}_max_iters-{config.max_iters}_lr-{config.lr}_batch_size-{config.batch_size}"
+    exp_path=f"norm_type-{config.norm_type}_use_rope-{config.use_rope}_ffn_type-{config.ffn_type}_opt-muon_max_iters-{config.max_iters}_lr-{config.lr}_lr_muon-{config.lr_muon}_batch_size-{config.batch_size}"
     base_save_path=os.path.join(args.checkpoint_dir,exp_path)
     start_iter=0
     if args.resume_checkpoint_path is not None:
-       start_iter=load_checkpoint(args.resume_checkpoint_path,model,opt)
+        start_iter=load_checkpoint(args.resume_checkpoint_path,model,opt_adam,opt_muon)
 
     if config.use_wandb:
         import wandb
@@ -180,9 +195,10 @@ def train_model():
     
     model.train()
     start_time=time.time()
+
     for iter in range(start_iter,config.max_iters):
         if iter%config.save_interval==0:
-            save_checkpoint(model,opt,iter,base_save_path+f"_iter-{iter}.pt")
+            save_checkpoint(model,opt_adam,iter,base_save_path+f"_iter-{iter}.pt",opt_muon)
             print(f"检查点已成功保存到: {base_save_path}_iter-{iter}.pt")
 
         if iter%config.eval_interval==0:
@@ -208,16 +224,21 @@ def train_model():
             print(f"第{iter}轮PPL: {torch.exp(eval_loss).item(): .4f}")
 
 
-        opt.zero_grad()
+        opt_adam.zero_grad()
+        opt_muon.zero_grad()
         inputs,targets=get_batch(train_tokenized_data,config)
         logits=model(inputs)
         loss=cross_entropy(logits,targets)
         loss.backward()
         global_grad=gradient_clipping(model.parameters(),config.max_l2_norm)
         lr = lr_cosine_schedule(iter, config.max_learning_rate, config.min_learning_rate, config.warmup_iters, config.cosine_cycle_iters) 
-        for param_group in opt.param_groups:
+        lr_muon=lr_cosine_schedule(iter, config.max_learning_rate_muon, config.min_learning_rate_muon, config.warmup_iters, config.cosine_cycle_iters) 
+        for param_group in opt_adam.param_groups:
             param_group['lr']=lr
-        opt.step()
+        for param_group in opt_muon.param_groups:
+            param_group['lr']=lr_muon
+        opt_adam.step()
+        opt_muon.step()
 
         
         if iter%config.log_interval==0:
@@ -230,6 +251,7 @@ def train_model():
                     "Elapsed":elapsed,
                     "Train loss": loss.item(),
                     "Lr":lr,
+                    "Lr_muon":lr_muon,
                     "Grad norm":global_grad.item(),
                     "token seen":token_seen
                 }
@@ -239,6 +261,7 @@ def train_model():
                 wandb.log({
                 "train/loss": loss.item(),
                 "train/lr": lr,
+                "train/lr_muon":lr_muon,
                 "train/grad_norm": global_grad.item(),
                 "time/elapsed_sec": elapsed,
                 "token_seen": token_seen
@@ -248,12 +271,13 @@ def train_model():
             print(f"Elapsed: {elapsed: .2f}s")
             print(f"Train loss: {loss.item(): .4f}")
             print(f"Lr: {lr: .6e}")
+            print(f"Lr_muon: {lr_muon: .6e}")
             print(f"Grad norm: {global_grad.item(): .4f}")
             print(f"token seen: {token_seen}")
 
     final_val_loss = estimate_loss(model, valid_tokenized_data, config.eval_iters, config)
     print(f"最终验证集 Loss: {final_val_loss.item():.4f}")
-    save_checkpoint(model, opt, config.max_iters, base_save_path+f"_iter-{config.max_iters}.pt")
+    save_checkpoint(model, opt_adam, config.max_iters, base_save_path+f"_iter-{config.max_iters}.pt",opt_muon)
     print(f"最终检查点已保存至: {base_save_path}_iter-{config.max_iters}.pt")
     if config.use_wandb:
         wandb.log(
@@ -270,11 +294,5 @@ def train_model():
         }
         log_save_to_disk(os.path.join(args.log_output_dir,exp_path+".jsonl"),save_log)
 
-if __name__=="__main__":
-    train_model()
-
-
-
-
-
-    
+    if __name__=="__main__":
+        train_model()
